@@ -726,15 +726,23 @@
         var fixedInfo = $ax.dynamicPanelManager.getFixedInfo(elementId);
         var xProp = 'left';
         var xDiff = '+=';
-        if(fixedInfo && fixedInfo.horizontal == 'right') {
-            xProp = 'right';
-            xDiff = '-=';
+        if(fixedInfo) {
+            if(fixedInfo.horizontal == 'right') {
+                xProp = 'right';
+                xDiff = '-=';
+            } else if(fixedInfo.horizontal == 'center') {
+                xProp = 'margin-left';
+            }
         }
         var yProp = 'top';
         var yDiff = '+=';
-        if(fixedInfo && fixedInfo.vertical == 'bottom') {
-            yProp = 'bottom';
-            yDiff = '-=';
+        if(fixedInfo) {
+            if(fixedInfo.vertical == 'bottom') {
+                yProp = 'bottom';
+                yDiff = '-=';
+            } else if(fixedInfo.vertical == 'middle') {
+                yProp = 'margin-top';
+            }
         }
 
         var css = {};
@@ -762,6 +770,9 @@
         var widgetDragInfo = eventInfoCopy.dragInfo;
         var jobj = $jobj(elementId);
 
+        var startX;
+        var startY;
+
         switch(moveInfo.moveType) {
         case "location":
             // toRatio is ignoring anything before start since that has already taken effect we just know whe have from start to len to finish
@@ -780,8 +791,6 @@
             // If this is final stop for this move, then clear out the result so next move won't use it
             if(stopInfo.instant || stopInfo.end == stopInfo.len) comboState.moveResult = undefined;
 
-            var startX;
-            var startY;
             if (layerInfo) {
                 startX = layerInfo.left;
                 startY = layerInfo.top;
@@ -792,10 +801,14 @@
             } else {
                 startX = $ax('#' + elementId).locRelativeIgnoreLayer(false);
                 startY = $ax('#' + elementId).locRelativeIgnoreLayer(true);
+                if(jobj.css('position') == 'fixed') {
+                    startX -= $(window).scrollLeft();
+                    startY -= $(window).scrollTop();
+                }
             }
 
-            xValue = (xValue - startX) * toRatio;
-            yValue = (yValue - startY) * toRatio;
+            xValue = xValue == '' ? 0 : (xValue - startX) * toRatio;
+            yValue = yValue == '' ? 0 : (yValue - startY) * toRatio;
 
             break;
         case "delta":
@@ -852,6 +865,14 @@
         if (options && options.boundaryExpr) {
             //$ax.public.fn.removeCompound(jobj);
 
+            if(jobj.css('position') == 'fixed') {
+                //swap page coordinates with fixed coordinates
+                options.boundaryExpr.leftExpr.value = options.boundaryExpr.leftExpr.value.replace('.top', '.topfixed').replace('.left', '.leftfixed').replace('.bottom', '.bottomfixed').replace('.right', '.rightfixed');
+                options.boundaryExpr.leftExpr.stos[0].leftSTO.prop = options.boundaryExpr.leftExpr.stos[0].leftSTO.prop + 'fixed';
+                options.boundaryStos.boundaryScope.direcval0.value = options.boundaryStos.boundaryScope.direcval0.value.replace('.top', '.topfixed').replace('.left', '.leftfixed').replace('.bottom', '.bottomfixed').replace('.right', '.rightfixed');
+                options.boundaryStos.boundaryScope.direcval0.stos[0].leftSTO.prop = options.boundaryStos.boundaryScope.direcval0.stos[0].leftSTO.prop + 'fixed';
+            }
+
             if(moveWithThis && (xValue || yValue)) {
                 _updateLeftExprVariable(options.boundaryExpr, xValue.toString(), yValue.toString());
             }
@@ -872,15 +893,27 @@
                         }
                     }
 
+                    if(layerInfo) {
+                        startX = layerInfo.left;
+                        startY = layerInfo.top;
+                    } else {
+                        startX = $ax('#' + elementId).locRelativeIgnoreLayer(false);
+                        startY = $ax('#' + elementId).locRelativeIgnoreLayer(true);
+                        if(jobj.css('position') == 'fixed') {
+                            startX -= $(window).scrollLeft();
+                            startY -= $(window).scrollTop();
+                        }
+                    }
+
                     if(boundaryStoInfo.ySto) {
-                        var currentTop = layerInfo ? layerInfo.top : Number(jobj.css('top').replace('px', ''));
+                        var currentTop = layerInfo ? layerInfo.top : startY;
                         var newTop = $ax.evaluateSTO(boundaryStoInfo.ySto, boundaryStoInfo.boundaryScope, eventInfoCopy);
                         if(moveTo) yValue = newTop;
                         else yValue = newTop - currentTop;
                     }
 
                     if(boundaryStoInfo.xSto) {
-                        var currentLeft = layerInfo ? layerInfo.left : Number(jobj.css('left').replace('px', ''));
+                        var currentLeft = layerInfo ? layerInfo.left : startX;
                         var newLeft = $ax.evaluateSTO(boundaryStoInfo.xSto, boundaryStoInfo.boundaryScope, eventInfoCopy);
                         if(moveTo) xValue = newLeft;
                         else xValue = newLeft - currentLeft;
@@ -1266,7 +1299,7 @@
                     var stop = options.stop;
                     var ratio = stop.instant ? 1 : (stop.end - stop.start) / (stop.len - stop.start);
 
-                    var size = _getSizeFromInfo(resizeInfo, eventInfoCopy, oldHeight, oldWidth, elementId);
+                    var size = _getSizeFromInfo(resizeInfo, eventInfoCopy, oldWidth, oldHeight, elementId);
                     var newWidth = size.width;
                     var newHeight = size.height;
                     var deltaWidth = (newWidth - oldWidth)*ratio;

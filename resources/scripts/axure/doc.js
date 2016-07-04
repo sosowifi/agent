@@ -34,6 +34,11 @@
             var style = customStyles[key];
             stylesById[style.id] = style;
         }
+        var duplicateStyles = stylesheet.duplicateStyles;
+        for(var duplicateKey in duplicateStyles) {
+            stylesById[duplicateKey] = stylesById[duplicateStyles[duplicateKey]];
+        }
+
         stylesheet.stylesById = stylesById;
     };
 
@@ -329,10 +334,8 @@
             var repeaterId = $ax.getParentRepeaterFromScriptId(scriptId);
             if (repeaterId) widget.repeater = $ax.public.fn.IsRepeater(obj.type) ? widget : _getWidgetInfo(repeaterId);
 
-            var boundingRect = $ax.public.fn.getWidgetBoundingRect(elementId);
-
             if($ax.public.fn.IsLayer(obj.type)) {
-                
+                var boundingRect = $ax.public.fn.getWidgetBoundingRect(elementId);
                 widget.x = boundingRect.left;
                 widget.y = boundingRect.top;
                 widget.width = boundingRect.width;
@@ -392,11 +395,19 @@
                 widget.pageindex = $ax.repeater.getPageIndex(scriptId);
             }
 
-            widget.left = widget.x;
-            widget.top = widget.y;
-            widget.right = widget.x + widget.width;
-            widget.bottom = widget.y + widget.height;
+            widget.left = widget.leftfixed = widget.x;
+            widget.top = widget.topfixed = widget.y;
+            widget.right = widget.rightfixed = widget.x + widget.width;
+            widget.bottom = widget.bottomfixed = widget.y + widget.height;
 
+            if(elementQuery.css('position') == 'fixed') {
+                var windowScrollLeft = $(window).scrollLeft();
+                var windowScrollTop = $(window).scrollTop();
+                widget.leftfixed = widget.left - windowScrollLeft;
+                widget.topfixed = widget.top - windowScrollTop;
+                widget.rightfixed = widget.right - windowScrollLeft;
+                widget.bottomfixed = widget.bottom - windowScrollTop;
+            }
             return widget;
         };
         $ax.getWidgetInfo = _getWidgetInfo;

@@ -412,7 +412,8 @@ $axure.internal(function($ax) {
         if(x == 0 && y == 0) {
             for(var i = 0; i < elementIds.length; i++) {
                 var elementId = elementIds[i];
-                $ax.move.nopMove(elementId);
+                $ax.move.nopMove(elementId, options);
+
                 //$ax.event.raiseSyntheticEvent(elementId, "onMove");
                 $ax.action.fireAnimationFromQueue(elementId, $ax.action.queueTypes.move);
 
@@ -1217,24 +1218,52 @@ $axure.internal(function($ax) {
 
     var _fixedOffset = function (id, vert) {
         var axObj = $obj(id);
-        var obj = $jobj(id);
         var dim = vert ? 'height' : 'width';
         var vertKey = (vert ? 'Vertical' : 'Horizontal');
         var key = 'fixed' + vertKey;
         var alignment = axObj[key];
-        var loc = axObj['fixedMargin' + vertKey];
+        if(!alignment) return { valid: false };
+        var loc = 0;
+
+        // TODO: This returns 0 for width/height it or any parent is display none. Similar issue when using axquery width/height
+        // TODO:  Look into replacing this with axquery width/height and fixing that to use this hack. Potentially want to make js generic trapper.
+        var trap = _displayWidget(id);
+        var query = $jobj(id);
+        var objSize = query[dim]();
+        trap();
+
         if(alignment == 'center' || alignment == 'middle') {
-            loc += ($(window)[dim]() - obj[dim]()) / 2;
+            loc = $ax.getNumFromPx(query.css('margin-' + (vert ? 'top' : 'left')));
+            loc += ($(window)[dim]()) / 2;
         } else if(alignment == 'bottom' || alignment == 'right') {
-            loc = $(window)[dim]() - obj[dim]() - loc; // subract loc because margin here moves farther left/up as it gets bigger.
+            loc = $ax.getNumFromPx(query.css(vert ? 'bottom' : 'right'));
+            loc = $(window)[dim]() - objSize - loc; // subract loc because margin here moves farther left/up as it gets bigger.
+        } else {
+            loc = $ax.getNumFromPx(query.css(vert ? 'top' : 'left'));
         }
 
-        if(axObj[key]) {
-            var scrollKey = 'scroll' + (vert ? 'Y' : 'X');
-            return { offset: window[scrollKey] + loc, valid: true };
-        }
-
-        return { valid: false };
+        var scrollKey = 'scroll' + (vert ? 'Y' : 'X');
+        return { offset: window[scrollKey] + loc, valid: true };
     };
 
+    var _displayWidget = function(id) {
+        var parents = $ax('#' + id).getParents(true, '*')[0];
+        parents.push(id); // also need to show self
+
+        var displayed = [];
+        for(var i = 0; i < parents.length; i++) {
+            var currId = parents[i];
+            var currObj = $jobj(currId);
+            if(currObj.css('display') == 'none') {
+                currObj.css('display', 'block');
+                displayed.push(currId);
+            }
+        }
+
+        return function() {
+            for(var i = 0; i < displayed.length; i++) {
+                $jobj(displayed[i]).css('display', 'none');
+            }
+        };
+    }
 });

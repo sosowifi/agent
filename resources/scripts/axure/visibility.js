@@ -46,9 +46,11 @@
         }
     };
 
-    var _setWidgetVisibility = $ax.visibility.SetWidgetVisibility = function(elementId, options) {
+    var _setWidgetVisibility = $ax.visibility.SetWidgetVisibility = function (elementId, options) {
+        var visible = $ax.visibility.IsIdVisible(elementId);
         // If limboed, just fire the next action then leave.
-        if(_limboIds[elementId]) {
+        if(visible == options.value || _limboIds[elementId]) {
+            if(!_limboIds[elementId]) options.onComplete && options.onComplete();
             $ax.action.fireAnimationFromQueue(elementId, $ax.action.queueTypes.fade);
             return;
         }
@@ -609,6 +611,7 @@
         if(resized) $ax.event.raiseSyntheticEvent(id, 'onResize');
     };
 
+    var containedFixed = {};
     var _pushContainer = _visibility.pushContainer = function(id, panel) {
         var count = containerCount[id];
         if(count) containerCount[id] = count + 1;
@@ -646,16 +649,31 @@
                     container.append(childContainer);
                 }
             } else {
+                var focus = _getCurrFocus();
+
                 // Layer needs to fix top left
                 var childIds = $ax('#' + id).getChildren()[0].children;
                 for(var i = 0; i < childIds.length; i++) {
                     var childId = childIds[i];
-                    if($ax.dynamicPanelManager.getFixedInfo(childId).fixed) continue;
+                    var childObj = $jobj(childId);
+                    var fixedInfo = $ax.dynamicPanelManager.getFixedInfo(childId);
+                    if(fixedInfo.fixed) {
+                        var axObj = $ax('#' + childId);
+                        var left = axObj.left();
+                        var top = axObj.top();
+                        containedFixed[childId] = { left: left, top: top, fixed: fixedInfo };
+                        childObj.css('left', left);
+                        childObj.css('top', top);
+                        childObj.css('margin-left', 0);
+                        childObj.css('margin-top', 0);
+                        childObj.css('right', 'auto');
+                        childObj.css('bottom', 'auto');
+                        childObj.css('position', 'absolute');
+                    }
                     var cssChange = {
                         left: '-=' + css.left,
                         top: '-=' + css.top
                     };
-                    var childObj = $jobj(childId);
                     if($ax.getTypeFromElementId(childId) == $ax.constants.LAYER_TYPE) {
                         _pushContainer(childId, false);
                         $ax.visibility.applyWidgetContainer(childId, true).css(cssChange);
@@ -669,12 +687,14 @@
                         //        if (grandChildId.indexOf(childId + 'p') >= 0 || grandChildId.indexOf('_container') >= 0) $jobj(grandChildId).css(cssChange);
                         //    }
                         //} else 
-                        childObj.css(cssChange);
+                        // Need to include ann and ref in move.
                         childObj = $addAll(childObj, childId);
+                        childObj.css(cssChange);
                     }
 
                     container.append(childObj);
                 }
+                _setCurrFocus(focus);
             }
         }
     };
@@ -688,8 +708,17 @@
 
         var jobj = $jobj(id);
         var container = $ax.visibility.applyWidgetContainer(id, true);
+
+        // If layer is at bottom or right of page, unwrapping could change scroll by temporarily reducting page size.
+        //  To avoid this, we let container persist on page, with the size it is at this point, and don't remove container completely
+        //  until the children are back to their proper locations.
+        var size = $ax('#' + id);
+        container.css('width', size.width());
+        container.css('height', size.height());
+        var focus = _getCurrFocus();
         jobj.append(container.children());
-        container.remove();
+        _setCurrFocus(focus);
+        $('body').append(container);
 
         // Layer doesn't have children containers to clean up
         if(panel) {
@@ -706,7 +735,6 @@
             var childIds = $ax('#' + id).getChildren()[0].children;
             for (var i = 0; i < childIds.length; i++) {
                 var childId = childIds[i];
-                if($ax.dynamicPanelManager.getFixedInfo(childId).fixed) continue;
                 var cssChange = {
                     left: '+=' + left,
                     top: '+=' + top
@@ -724,11 +752,55 @@
                 //            if (grandChildId.indexOf(childId + 'p') >= 0 || grandChildId.indexOf('_container') >= 0) $jobj(grandChildId).css(cssChange);
                 //        }
                 //} else
-                    childObj.css(cssChange);
+                    var allObjs = $addAll(childObj, childId); // Just include other objects for initial css. Fixed panels need to be dealt with separately.
+                    allObjs.css(cssChange);
+
+                    var fixedInfo = containedFixed[childId];
+                    if(fixedInfo) {
+                        delete containedFixed[childId];
+
+                        childObj.css('position', 'fixed');
+                        var deltaX = $ax.getNumFromPx(childObj.css('left')) - fixedInfo.left;
+                        var deltaY = $ax.getNumFromPx(childObj.css('top')) - fixedInfo.top;
+
+                        fixedInfo = fixedInfo.fixed;
+                        if(fixedInfo.horizontal == 'left') childObj.css('left', fixedInfo.x + deltaX);
+                        else if(fixedInfo.horizontal == 'center') {
+                            childObj.css('left', '50%');
+                            childObj.css('margin-left', fixedInfo.x + deltaX);
+                        } else {
+                            childObj.css('left', 'auto');
+                            childObj.css('right', fixedInfo.x - deltaX);
+                        }
+
+                        if(fixedInfo.vertical == 'top') childObj.css('top', fixedInfo.y + deltaY);
+                        else if(fixedInfo.vertical == 'middle') {
+                            childObj.css('top', '50%');
+                            childObj.css('margin-top', fixedInfo.y + deltaY);
+                        } else {
+                            childObj.css('top', 'auto');
+                            childObj.css('bottom', fixedInfo.y - deltaY);
+                        }
+
+                        $ax.dynamicPanelManager.updatePanelPercentWidth(childId);
+                        $ax.dynamicPanelManager.updatePanelContentPercentWidth(childId);
+
+                    }
                 }
             }
         }
+        container.remove();
     };
+
+    var _getCurrFocus = function() {
+        return window.lastFocusedClickable && window.lastFocusedClickable.id;
+    }
+
+    var _setCurrFocus = function(id) {
+        if(id) {
+            $jobj(id).focus();
+        }
+    }
 
     //use this to save & restore DP's scroll position when show/hide
     //key => dp's id (not state's id, because it seems we can change state while hiding)
@@ -780,7 +852,7 @@
         return container;
     };
 
-    var CONTAINER_SUFFIX = '_container';
+    var CONTAINER_SUFFIX = _visibility.CONTAINER_SUFFIX = '_container';
     var CONTAINER_INNER = CONTAINER_SUFFIX + '_inner';
     _visibility.getWidgetFromContainer = function(id) {
         var containerIndex = id.indexOf(CONTAINER_SUFFIX);
@@ -920,7 +992,7 @@
         $jobj(stateid).appendTo(panel);
         //when bring a panel to front, it will be focused, and the previous front panel should fire blur event if it's lastFocusedClickableSelector
         //ie(currently 11) and firefox(currently 34) doesn't fire blur event, this is the hack to fire it manually
-        if((IE || FIREFOX) && window.lastFocusedClickable && window.lastFocusedControl == window.lastFocusedClickable.id) {
+        if((IE || FIREFOX) && window.lastFocusedClickable && $ax.event.getFocusableWidgetOrChildId(window.lastFocusedControl) == window.lastFocusedClickable.id) {
             $(window.lastFocusedClickable).triggerHandler('blur');
         }
     };
